@@ -1,0 +1,39 @@
+import numpy as np
+
+# Constants
+R = 8.314  # J/(mol·K)
+T = 2000  # K
+A = 1.500e4  # Pre-exponential factor from Chemkin format
+E_a = 32000 * R  # Activation energy in J/mol (converted from K using R)
+total_pressure = 3 * 1e5  # Total pressure in Pascals (3 bar)
+
+# Initial mole fractions
+x_O2_initial = 0.2
+x_N2 = 0.8
+
+# Assuming complete dissociation of O2 to 2O
+moles_O2_initial = x_O2_initial
+moles_O = 2 * moles_O2_initial  # Each O2 dissociates into 2 O atoms
+
+# New total moles after dissociation
+total_moles_after_dissociation = moles_O + x_N2
+x_O_new = moles_O / total_moles_after_dissociation
+x_N2_new = x_N2 / total_moles_after_dissociation
+
+# Calculate partial pressures
+p_O2 = x_O2_initial * total_pressure
+p_O = x_O_new * total_pressure
+
+# Equilibrium constant Kp for the dissociation
+Kp = (p_O / p_O2)**2
+
+# Reaction rate constant k using the Arrhenius equation
+k = A * np.exp(-E_a / (R * T))
+
+# Estimate the time to achieve 99% conversion
+time_to_equilibrium = -np.log(0.01) / k
+
+# Output results
+print("Equilibrium constant, Kp:", Kp)
+print("Reaction rate constant, k (s^-1):", k)
+print("Time to reach 99% conversion (seconds):", time_to_equilibrium)
