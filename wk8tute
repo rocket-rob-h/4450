@@ -1,0 +1,45 @@
+import numpy as np
+
+# Constants
+R = 8.314  # J/(mol·K) - Universal gas constant
+T = 2000  # K - Temperature
+A = 1.500e4  # Pre-exponential factor
+beta = 0  # Temperature exponent
+E_a = 32000  # Activation energy in K
+total_pressure = 3 * 1e5  # Total pressure in Pascals (3 bar)
+
+# Initial mole fractions
+x_O2_initial = 0.2
+x_N2 = 0.8
+
+# Molecular weights
+M_O2 = 32  # g/mol for O2
+M_O = 16  # g/mol for atomic O
+M_N2 = 28  # g/mol for N2
+
+# Calculate moles of O2 initially (assuming 1 mol total initially for simplicity)
+moles_O2_initial = x_O2_initial
+moles_O = 2 * moles_O2_initial  # Each O2 produces 2 O atoms
+
+# New mole fractions after complete dissociation
+total_moles = moles_O + (x_N2 * (1 - x_O2_initial))  # Total moles after dissociation
+x_O_new = moles_O / total_moles
+x_N2_new = x_N2 * (1 - x_O2_initial) / total_moles
+
+# Calculate partial pressures
+p_O2 = x_O2_initial * total_pressure
+p_O = x_O_new * total_pressure
+
+# Calculate equilibrium constant Kp
+Kp = (p_O / p_O2)**2
+
+# Calculate the reaction rate constant k using the Arrhenius equation
+k = A * T**beta * np.exp(-E_a / (R * T))
+
+# Estimate the time to achieve 99% conversion
+time_to_equilibrium = -np.log(0.01) / k
+
+# Output results
+print("Equilibrium constant, Kp:", Kp)
+print("Reaction rate constant, k (s^-1):", k)
+print("Time to reach 99% conversion (seconds):", time_to_equilibrium)
