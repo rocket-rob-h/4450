@@ -1,0 +1,329 @@
+# Preamble
+import numpy as np
+import Fluids_Library
+# import Propulsion_Library
+from scipy.optimize import fsolve, newton
+import matplotlib.pyplot as plt
+
+#1. Inlet Computations
+'''a) Compute the angles at which the 3 shocks in the inlet occur relative to the flow'''
+
+# Initial Conditions
+Mach_inf = 15
+T_inf = 220 # K
+dynamic_pressure_q = 50000 # Pa
+H2_Tot = 120e6 #J/kg Total Enthalpy 2
+gamma_1 = 1.4 # Cp/Cv
+R_air = 287 # J/kg.K
+
+'''Assumptions
+Adiabatic Walls, no heat transfer from flow to walls or vice-versa
+No friction at wall inlets, two ramp intake
+'''
+
+theta_1_up = np.radians(5)
+theta_2_up = np.radians(9) # 5 + 4 = 9
+theta2_theta1 = np.radians(4)
+# 3rd shock reflects from cowl and turns flow back to parallel state 3
+theta_3_down = np.radians(9)
+
+def sound_speed(gamma,R,Temperature):
+    return np.sqrt(gamma * R * Temperature)
+
+# Sound speed to get a free stream velocity from the free stream temperature
+print()
+
+sound_speed_inf = sound_speed(gamma_1,R_air,T_inf)
+print(f'a Free stream Sound Speed is {sound_speed_inf:.3f} m/s')
+
+def Velocity(Mach, sound_speed):
+    return Mach * sound_speed
+
+velocity_inf = Velocity(Mach_inf,sound_speed_inf)
+print(f'v Free stream Velocity is {velocity_inf:.3f} m/s')
+
+def calc_density(dynamic_pressure, velocity):
+    """Calculate the density from dynamic pressure and velocity."""
+    return 2 * dynamic_pressure / (velocity ** 2)
+
+rho_inf = calc_density(dynamic_pressure_q,velocity_inf)
+print(f'rho The free stream density for this velocity and dynamic pressure is {rho_inf:.6f} kg/m^3')
+
+def Ideal_gas_law_P(rho, R, Temperature):
+    return rho * R * Temperature
+
+P_static_inf = Ideal_gas_law_P(rho_inf,R_air,T_inf)
+print(f'p Freestream Static Pressure from Ideal gas law is {P_static_inf:.3f} Pa')
+def calc_dynamic_pressure(gamma, Pressure, Mach):
+    return (gamma * Pressure * (Mach **2)) / 2
+
+check_q = calc_dynamic_pressure(gamma_1, P_static_inf, Mach_inf)
+print(f'Dynamic pressure is {check_q:.3f} Pa')
+print(f'Therefore even with a higher static pressure than the US Standard atmosphere suggests for 220K, 23km atl, 0.005 kg, this is dynamic pressure driven')
+print()
+# Get all the values post oblique shock of 9 degrees at these initial conditions
+
+print('Question 1.1 Beginning')
+
+
+def solve_beta(M1, theta, gamma=1.4):
+    # Function to iterate
+    def f_to_solve(beta, M1, theta, gamma):
+        left_hand_side = np.tan(beta)
+        right_hand_side = (((gamma + 1) * M1**2 * np.sin(beta)**2) /
+                           (2 + (gamma - 1) * M1**2 * np.sin(beta)**2)) * np.tan(beta - theta)
+        return left_hand_side - right_hand_side
+
+    # Weak shock initial guess (close to theta)
+    beta_weak_guess = theta + np.radians(1)  # A small angle above theta
+    # Strong shock initial guess (further from theta)
+    beta_strong_guess = np.pi/2 - np.radians(1)  # Near 90 degrees but within range
+
+    # Solve for weak shock
+    beta_weak_solution = fsolve(f_to_solve, beta_weak_guess, args=(M1, theta, gamma))[0]
+    # Solve for strong shock
+    beta_strong_solution = fsolve(f_to_solve, beta_strong_guess, args=(M1, theta, gamma))[0]
+
+    return beta_weak_solution, beta_strong_solution
+
+beta_weak, beta_strong = solve_beta(Mach_inf, theta_1_up)
+print('--First Inlet Turn --'*3)
+print()
+print(f"Weak shock beta: {np.degrees(beta_weak):.3f} degrees")
+print(f"Strong shock beta: {np.degrees(beta_strong):.3f} degrees")
+
+
+def M2_obl(M1, beta, theta, g=1.4):
+    m1sb = M1 * np.sin(beta)
+    numer = 1.0 + ((g - 1.0) / 2.0) * m1sb ** 2
+    denom = g * m1sb ** 2 - (g - 1.0) / 2.0
+    return np.sqrt(numer / (denom * (np.sin(beta - theta) ** 2)))
+
+M2_oblqiue_theta_1 = M2_obl(Mach_inf,beta_weak,theta_1_up,gamma_1)
+print(f'The M2_oblqiue_theta_1 is {M2_oblqiue_theta_1:.3f}')
+
+def M1_n(M1, beta):
+    return M1 * np.sin(beta)
+
+M1_n_inlet_1 = M1_n(Mach_inf,beta_weak)
+print(f'The M1_n_inlet_1 Normal Mach 1 is {M1_n_inlet_1:2f}')
+
+
+def ObliqueShock(M1, rho1, p1, theta, gamma_1=1.4):
+    """
+    Calculates properties behind an oblique shock wave given the upstream Mach number (M1),
+    upstream density (rho1), upstream pressure (p1), deflection angle (theta in degrees),
+    and specific heat ratio (gamma_1).
+    """
+    # Solve for weak beta using the solve_beta function
+    beta_weak, _ = solve_beta(M1, theta, gamma_1)
+
+    # Convert theta from degrees to radians
+    # theta = np.radians(theta_deg)
+
+    beta = beta_weak
+    M1n = M1 * np.sin(beta)
+    M1n2 = M1n * M1n
+    gamma_1m1 = gamma_1 - 1.0
+    gamma_1p1 = gamma_1 + 1.0
+
+    M2n = np.sqrt((M1n2 + 2.0 / gamma_1m1) / (2.0 * gamma_1 / gamma_1m1 * M1n2 - 1))
+    M2 = M2n / np.sin(beta - theta)
+    M2t = M2 * np.cos(beta - theta)
+    pratio = (2 * gamma_1 * M1n2 - gamma_1m1) / gamma_1p1
+    rratio = gamma_1p1 * M1n2 / (gamma_1m1 * M1n2 + 2.0)
+    p2 = p1 * pratio
+    rho2 = rho1 * rratio
+    # ptratio = pt1*sp.power(rratio,(k/km1))*sp.power(pratio,(-1.0/km1))
+    a2 = np.sqrt(gamma_1 * p2 / rho2)
+
+    return M2, M2n, M2t, rho2, p2, a2, beta
+
+ObliqueShock_Inlet_1 = ObliqueShock(Mach_inf, rho_inf, P_static_inf, theta_1_up, gamma_1)
+
+# Assign the results to individual variables
+M2_oblique_theta1, M2n_oblique_theta1, M2t_oblique_theta1, rho2_oblique_theta_1, P2_oblique_theta_1, a2_oblique_theta1, beta_oblique_theta1 = ObliqueShock_Inlet_1
+
+# Print the results with variable names
+variables = ["M2", "M2n", "M2t", "rho2 (kg/m^3)", "p2 (Pa)", "a2 (m/s)", "beta (deg)"]
+values = [M2_oblique_theta1, M2n_oblique_theta1, M2t_oblique_theta1, rho2_oblique_theta_1, P2_oblique_theta_1, a2_oblique_theta1, np.degrees(beta_oblique_theta1)]
+
+for var_name, value in zip(variables, values):
+    print(f"{var_name}: {value:.9f}")
+
+# Function to calculate the temperature ratio across the oblique shock
+def oblique_temp_ratio(p2, p1, rho2, rho1):
+    temp_ratio = (p2 / p1) * (rho1 / rho2)
+    return temp_ratio
+
+# Calculate the temperature ratio across the first oblique shock
+T2_T1_oblique_theta_1 = oblique_temp_ratio(P2_oblique_theta_1, P_static_inf, rho2_oblique_theta_1, rho_inf)
+print(f'The temperature ratio across the first oblique shock is {T2_T1_oblique_theta_1:.3f}')
+T2_1 = T_inf * T2_T1_oblique_theta_1
+print(f'The Temperature 2 Post 1st theta oblique is {T2_1:.3f} K')
+print()
+
+# Iteration 2
+
+
+
+print('The next variables for Inlet Turn 2')
+'''Now start the next set using the P2, T2 and M2 values for the next turn of 4 degrees'''
+
+beta_weak2, beta_strong2 = solve_beta(M2_oblqiue_theta_1, theta2_theta1)
+print()
+print(f"Weak shock beta: {np.degrees(beta_weak2):.3f} degrees")
+print(f"Strong shock beta: {np.degrees(beta_strong2):.3f} degrees")
+M2_oblqiue_theta_2 = M2_obl(M2_oblqiue_theta_1,beta_weak2,theta2_theta1 ,gamma_1)
+print(f'The M2_oblqiue_theta_1 is {M2_oblqiue_theta_2:.3f}')
+
+ObliqueShock_Inlet_2 = ObliqueShock(M2_oblique_theta1, rho2_oblique_theta_1, P2_oblique_theta_1, theta2_theta1, gamma_1)
+
+# Assign the results to individual variables
+M2_oblique_theta_2, M2n_oblique_theta_2, M2t_oblique_theta_2, rho2_oblique_theta_2, P2_oblique_theta_2, a2_oblique_theta_2, beta_oblique_theta_2 = ObliqueShock_Inlet_2
+
+# Print the results with variable names
+variables = ["M2_2", "M2n_2", "M2t_2", "rho2_2 (kg/m^3)", "p2_2 (Pa)", "a2_2 (m/s)", "beta_2 (deg)"]
+values = [M2_oblique_theta_2, M2n_oblique_theta_2, M2t_oblique_theta_2, rho2_oblique_theta_2, P2_oblique_theta_2, a2_oblique_theta_2, np.degrees(beta_oblique_theta_2)]
+
+for var_name, value in zip(variables, values):
+    print(f"{var_name}: {value:.3f}")
+
+    # Calculate the temperature ratio across the first oblique shock
+T2_T1_oblique_theta_2 = oblique_temp_ratio(P2_oblique_theta_2, P2_oblique_theta_1, rho2_oblique_theta_2, rho2_oblique_theta_1)
+print(f'The temperature ratio across the second oblique shock is {T2_T1_oblique_theta_2:.3f}')
+T2_2 = T2_1 * T2_T1_oblique_theta_2
+print(f'The Temperature 2 Post 1st theta oblique is {T2_2:.3f} K')
+
+# Shock angle 3
+print()
+print('The next variables for Inlet Turn 3')
+'''Now start the next set using the P2, T2 and M2 values for the next turn of 4 degrees'''
+
+beta_weak3, beta_strong3 = solve_beta(M2_oblqiue_theta_2, theta_3_down)
+print()
+print(f"Weak shock beta: {np.degrees(beta_weak3):.3f} degrees")
+print(f"Strong shock beta: {np.degrees(beta_strong3):.3f} degrees")
+M2_oblqiue_theta_3 = M2_obl(M2_oblqiue_theta_2,beta_weak3,theta_3_down ,gamma_1)
+print(f'The M2_oblqiue_theta_2 is {M2_oblqiue_theta_3:.3f}')
+
+ObliqueShock_Inlet_3 = ObliqueShock(M2_oblique_theta_2, rho2_oblique_theta_2, P2_oblique_theta_2, theta_3_down, gamma_1)
+
+# Assign the results to individual variables
+M2_oblique_theta_3, M2n_oblique_theta_3, M2t_oblique_theta_3, rho2_oblique_theta_3, P2_oblique_theta_3, a2_oblique_theta_3, beta_oblique_theta_3 = ObliqueShock_Inlet_3
+
+# Print the results with variable names
+variables = ["M2_3", "M2n_3", "M2t_3", "rho2_3 (kg/m^3)", "p2_3 (Pa)", "a2_3 (m/s)", "beta_3 (deg)"]
+values = [M2_oblique_theta_3, M2n_oblique_theta_3, M2t_oblique_theta_3, rho2_oblique_theta_3, P2_oblique_theta_3, a2_oblique_theta_3, np.degrees(beta_oblique_theta_3)]
+
+for var_name, value in zip(variables, values):
+    print(f"{var_name}: {value:.3f}")
+
+    # Calculate the temperature ratio across the third oblique shock
+T2_T1_oblique_theta_3 = oblique_temp_ratio(P2_oblique_theta_3, P2_oblique_theta_2, rho2_oblique_theta_3, rho2_oblique_theta_2)
+print(f'The temperature ratio across the third oblique shock is {T2_T1_oblique_theta_3:.3f}')
+T2_3 = T2_2 * T2_T1_oblique_theta_3
+print(f'The Temperature 2 Post 1st theta oblique is {T2_3:.3f} K')
+
+print('Question 1.1 Completed')
+print()
+'''Question 1.d'''
+
+Velocity_3 = Velocity(M2_oblqiue_theta_3,a2_oblique_theta_3)
+print(f'The Velocity at state 3 due to sound speed and mach number is {Velocity_3:.3f} m/s')
+
+def mdot_o(rho3,V3,Ycowl, Ycb):
+    return rho3 * V3 * 2 * (Ycowl-Ycb) * 2
+
+def alpha(mdot_o,mdot_O2):
+    return mdot_o / mdot_O2
+
+ycb = 0.2
+w = 2
+mdot_O2 = 50 #kg/s
+mdot_o2R = 50 #kg/s
+
+# alpha is the mass flow rate of atmoshpheric air to the mass flow rate of oxygen
+
+def calc_cowl(mdot_o,rho,velocity,w,ycb):
+    return mdot_o / (2 * rho * velocity * w) + ycb
+
+# no need to find Mo at the range 5 > 25
+
+def mdot_air(alpha,mdot_O2):
+    return alpha * mdot_O2
+
+mdot_air_a5 = mdot_air(5,mdot_O2)
+print(f'Mdot_air_alpha_5 is {mdot_air_a5:.4f} kg/s')
+
+cowl_1 = calc_cowl(mdot_air_a5,rho2_oblique_theta_3,Velocity_3,2,0.2)
+print(f'Cowl_1 height is {cowl_1:.3f} m')
+
+
+# Alpha values
+alpha_values = np.arange(5, 26, 1)
+
+# Compute mass capture and cowl height for each alpha value
+mdot_air_values = mdot_air(alpha_values, mdot_O2)
+cowl_heights = calc_cowl(mdot_air_values, rho2_oblique_theta_3, Velocity_3, w, ycb)
+
+# Compute compression ratio
+compression_ratio = P2_oblique_theta_3 / P_static_inf
+
+# Print compression ratio to verify it remains constant
+print(f'Compression Ratio: {compression_ratio:.4f}')
+
+# Plot mass capture
+plt.figure(figsize=(7, 5))
+plt.plot(alpha_values, mdot_air_values, marker='o')
+plt.title('Mass Capture and Alpha', weight='bold', fontsize=10)
+plt.xlabel('Alpha', fontsize=10)
+plt.ylabel('Mass Capture (kg/s)', fontsize=10)
+plt.grid(True)
+plt.tick_params(axis='both', which='major', labelsize=8)
+plt.subplots_adjust(top=0.943, bottom=0.095, left=0.13, right=0.945, hspace=0.200, wspace=0.200)
+plt.savefig("Mass_Capture_and_Alpha.png", format='png', dpi=500)
+plt.show()
+
+# Plot cowl height
+plt.figure(figsize=(7, 5))
+plt.plot(alpha_values, cowl_heights, marker='o')
+plt.title('Cowl Height and Alpha', weight='bold', fontsize=10)
+plt.xlabel('Alpha', fontsize=10)
+plt.ylabel('Cowl Height (m)', fontsize=10)
+plt.grid(True)
+plt.tick_params(axis='both', which='major', labelsize=8)
+plt.subplots_adjust(top=0.943, bottom=0.095, left=0.13, right=0.945, hspace=0.200, wspace=0.200)
+plt.savefig("Cowl_Height_and_Alpha.png", format='png', dpi=500)
+plt.show()
+
+# Print the computed values for reference
+print("Alpha values, Mass Capture, Cowl Height, Density, Pressure")
+for alpha_val, mdot_air_val, cowl_height in zip(alpha_values, mdot_air_values, cowl_heights):
+    print(f'Alpha: {alpha_val}, Mass Capture: {mdot_air_val:.4f} kg/s, Cowl Height: {cowl_height:.3f} m')
+    print(f'Density at alpha {alpha_val}: {rho2_oblique_theta_3} kg/m^3')
+    print(f'Pressure at alpha {alpha_val}: {P2_oblique_theta_3} kPa')
+
+# Plot density
+plt.figure(figsize=(7, 5))
+plt.plot(alpha_values, [rho2_oblique_theta_3] * len(alpha_values), marker='o')
+plt.title('Density and Alpha', weight='bold', fontsize=10)
+plt.xlabel('Alpha', fontsize=10)
+plt.ylabel('Density (kg/m^3)', fontsize=10)
+plt.grid(True)
+plt.tick_params(axis='both', which='major', labelsize=8)
+plt.subplots_adjust(top=0.943, bottom=0.095, left=0.13, right=0.945, hspace=0.200, wspace=0.200)
+plt.savefig("Density_and_Alpha.png", format='png', dpi=500)
+plt.show()
+
+# Plot pressure
+plt.figure(figsize=(7, 5))
+plt.plot(alpha_values, [P2_oblique_theta_3] * len(alpha_values), marker='o')
+plt.title('Pressure and Alpha', weight='bold', fontsize=10)
+plt.xlabel('Alpha', fontsize=10)
+plt.ylabel('Pressure (kPa)', fontsize=10)
+plt.grid(True)
+plt.tick_params(axis='both', which='major', labelsize=8)
+plt.subplots_adjust(top=0.943, bottom=0.095, left=0.13, right=0.945, hspace=0.200, wspace=0.200)
+plt.savefig("Pressure_and_Alpha.png", format='png', dpi=500)
+plt.show()
